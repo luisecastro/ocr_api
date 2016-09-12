@@ -1,12 +1,17 @@
-# OCR-Concept Graph
-Luis Castro  
-September 12, 2016  
+---
+title: "OCR-Concept Graph"
+author: "Luis Castro"
+date: "September 12, 2016"
+output: 
+  html_document: 
+    keep_md: yes
+    theme: cerulean
+---
 
 OCR-API connection and concept graph.
 
 Required libraries:
-
-```r
+```{r,message=FALSE,warning=FALSE}
 setwd("/Volumes/Backup Mac/coding_old/Machine Learning/Volley/volley")
 source("functions.R")
 library(httr);library(XML);
@@ -16,8 +21,7 @@ library(ndtv); library(semnet)
 ```
 
 Login data for ABBYY API, free account used.
-
-```r
+```{r}
 ln <- "login"
 pw <- "pass"
 url <- "https://cloud.ocrsdk.com/"
@@ -29,8 +33,7 @@ frame_names <- c("id", "registrationTime", "statusChangeTime", "status", "filesC
 ```
 
 Import stop words that will be later used for data cleaning.
-
-```r
+```{r,message=FALSE,warning=FALSE}
 stopWords <- httr::content(GET(url="http://jmlr.csail.mit.edu/papers/volume5/lewis04a/a11-smart-stop-list/english.stop"),as="text")
 stopWords <- unlist(strsplit(stopWords,"\\n"))
 ```
@@ -46,8 +49,7 @@ Sequence of steps for connection with API.
 - Change raw data to text.
 
 - Delete last task from server
-
-```r
+```{r,eval=FALSE}
 proc <- xmlToList(httr::content(POST(url=url,path="processImage",authenticate(ln,pw),query=querylist,body=body),as="text"))
 fin <- xmlToList(httr::content(GET(url=url,authenticate(ln,pw),path="listFinishedTasks",query=""),as="text"))
 resdf <- as.data.frame(do.call(rbind,fin)) 
@@ -57,7 +59,9 @@ dTask <- GET(url=url,path="deleteTask",authenticate(ln,pw),query=list(taskID=as.
 ```
 
 Read downloaded text.
-
+```{r,echo=FALSE}
+text <- readLines("text.txt")
+```
 
 Sequence of steps for mining the text.
 - Clean text
@@ -67,8 +71,7 @@ Sequence of steps for mining the text.
 - Create 2 grams (for use in graphs)
 
 - Create frequency table
-
-```r
+```{r}
 clean_text <- unlist(strsplit(text," ")) %>% pre(T,T,T,T,T) %>% pos()
 clean_text <-  clean_text[!(clean_text %in% stopWords)]
 clean_text2 <- ngram(clean_text)
@@ -82,8 +85,7 @@ table1$count <- as.numeric(table1$count)
 
 - Set up main node (subject) limit to 10 (we can change that), in big documents graphs with all nodes become crowded and messy.
 - Select the clusters and plot them.
-
-```r
+```{r}
 eN <-10 
 nodes <- data.frame(id=paste0("s",seq(1:nrow(table1))),word=table1[,1],weight=table1[,2],stringsAsFactors = F)
 
@@ -118,21 +120,68 @@ net <- setNetworkAttributes(net,size_attribute = V(net)$weight,cluster_attribute
 ```
 
 Plot the graphs that show subjects and relationships.
-
-```r
+```{r,fig.width=8,fig.height=8}
     plot(net)
 ```
 
-![](excercise_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
+```{r,echo=FALSE}
+clean_text <- unlist(strsplit(text," ")) %>% pre(T,T,T,T,T) %>% pos()
+clean_text <-  clean_text[!(clean_text %in% stopWords)]
+clean_text2 <- ngram(clean_text)
+table1 <- tgram(clean_text)
 
+clean_text2$ngram <- as.character(clean_text2$ngram)
+clean_text2$count <- as.character(clean_text2$count)
+table1$ngrams <- as.character(table1$ngrams)
+table1$count <- as.numeric(table1$count)
+```
 
+```{r,echo=FALSE}
+text <- readLines("text1.txt")
+clean_text <- unlist(strsplit(text," ")) %>% pre(T,T,T,T,T) %>% pos()
+clean_text <-  clean_text[!(clean_text %in% stopWords)]
+clean_text2 <- ngram(clean_text)
+table1 <- tgram(clean_text)
 
+clean_text2$ngram <- as.character(clean_text2$ngram)
+clean_text2$count <- as.character(clean_text2$count)
+table1$ngrams <- as.character(table1$ngrams)
+table1$count <- as.numeric(table1$count)
 
+eN <-10 
+nodes <- data.frame(id=paste0("s",seq(1:nrow(table1))),word=table1[,1],weight=table1[,2],stringsAsFactors = F)
+
+edges <- NULL
+for(i in 1:nrow(table1[1:eN,])) {
+    temp1 <- as.character(clean_text2[table1[i,1]==clean_text2[,1],2])
+    edges <- data.frame(rbind(edges,cbind(rep(as.character(table1[i,1]),length(temp1)),temp1,1)),stringsAsFactors = F)
+}
+
+edges[,3]<- as.numeric(edges[,3])
+edges <- aggregate(edges[,3], edges[,-3], sum)
+rownames(edges) <- seq(1,nrow(edges))
+colnames(edges) <- c("from","to","weight")
+edges <- arrange(edges,desc(weight))
+
+edges2 <- edges
+for(i in 1:nrow(nodes)) {
+    edges2$from[edges2$from==nodes$word[i]] <- nodes$id[i]
+    edges2$to[edges2$to==nodes$word[i]] <- nodes$id[i]
+}
+
+uEdges <- unique(c(edges[,1],edges[,2]))
+nodes <- nodes[(nodes$word%in%uEdges),]
+
+nodes2 <- nodes
+nodes2$id <- nodes2$word 
+
+net <- graph.data.frame(edges, nodes2,directed=T) 
+
+V(net)$cluster <- edge.betweenness.community(net)$membership
+net <- setNetworkAttributes(net,size_attribute = V(net)$weight,cluster_attribute = V(net)$cluster)
+```
 
 Same previous process with another image.
-
-```r
+```{r,fig.width=8,fig.height=8}
     plot(net)
 ```
-
-![](excercise_files/figure-html/unnamed-chunk-11-1.png)<!-- -->
